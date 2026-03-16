@@ -1,2 +1,3 @@
 .vscode/
 esp-idf-rotary-pendulum/build/
+esp-idf-rotary-pendulum/.cache/

@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        encoder.c
+    INCLUDE_DIRS
+        .
+        ../../main/
+    REQUIRES
+        driver
+        esp_timer
+)

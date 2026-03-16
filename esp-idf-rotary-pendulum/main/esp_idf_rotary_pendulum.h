@@ -7,16 +7,13 @@
 #ifndef ESP_IDF_ROTARY_PENDULUM_H
 #define ESP_IDF_ROTARY_PENDULUM_H
 
-#define ENC_A       (GPIO_NUM_1)
-#define ENC_B       (GPIO_NUM_2)
+#define STP_DIR     (GPIO_NUM_1)
+#define STP_STEP    (GPIO_NUM_2)
+#define STP_SLEEP   (GPIO_NUM_3)
+#define STP_RESET   (GPIO_NUM_4)
+#define STP_ENABLE  (GPIO_NUM_5)
 
-#define STP_DIR     (GPIO_NUM_3)
-#define STP_STEP    (GPIO_NUM_4)
-#define STP_SLEEP   (GPIO_NUM_18)
-#define STP_RESET   (GPIO_NUM_17)
-#define STP_MS_3    (GPIO_NUM_16)
-#define STP_MS_2    (GPIO_NUM_15)
-#define STP_MS_1    (GPIO_NUM_14)
-#define STP_ENABLE  (GPIO_NUM_13)
+#define ENC_B       (GPIO_NUM_18)
+#define ENC_A       (GPIO_NUM_17)
 
 #endif

@@ -5,26 +5,22 @@
  */
 
 #include "esp_idf_rotary_pendulum.h"
+#include "encoder.h"
+#include "stepper_motor.h"
 
-#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-// initial setup of encoder, stepper motor
-void rotary_pendulum_init(void) {
-
-}
 
 // main task for rotary pendulum, to be created by xTaskCreate()
 void rotary_pendulum_main(void *pvParameters) {
 
-    rotary_pendulum_init();
-
+    enc_init();
+    stp_init();
+    
     // TODO setup interrupt routine instead of continuous polling loop
     for(;;) {
-
+        printf("position (ticks): %i\n", enc_get_pos_ticks());
+   
     }
-
 }
 
 // Start main task loop from rotary_pendulum_main() function
