@@ -11,7 +11,8 @@
 
 void stp_init(void);
 void stp_set_dir(uint8_t direction);
-void stp_set_speed(uint32_t speed);
+uint8_t stp_get_dir(void);
+void stp_set_speed_hz(uint32_t speed);
 
 /**
  * move stepper motor
