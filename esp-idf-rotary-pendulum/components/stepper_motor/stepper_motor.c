@@ -5,6 +5,8 @@
  */
 
 #include "stepper_motor.h"
+#include "driver/mcpwm_cmpr.h"
+#include "driver/mcpwm_types.h"
 #include "esp_idf_rotary_pendulum.h"
 
 #include "driver/gpio.h"
@@ -38,7 +40,11 @@ mcpwm_operator_config_t oper_0_config = {
     .intr_priority = 0,
 };
 
-// removed comparator component - (hopefully) not needed
+// comparator setup to set 1/2 duty cycle on-time
+mcpwm_cmpr_handle_t cmpr_0;
+mcpwm_comparator_config_t cmpr_0_config = {
+    .intr_priority = 0,
+};
 
 // set up PWM generator
 mcpwm_gen_handle_t generator_0;
@@ -83,7 +89,14 @@ static void stp_mcpwm_init(void) {
     mcpwm_new_generator(oper_0, &generator_0_config, &generator_0);
 
     mcpwm_generator_set_action_on_timer_event(generator_0, 
-            MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_FULL, MCPWM_GEN_ACTION_TOGGLE));
+            MCPWM_GEN_TIMER_EVENT_ACTION(
+                MCPWM_TIMER_DIRECTION_UP, 
+                MCPWM_TIMER_EVENT_EMPTY, 
+                MCPWM_GEN_ACTION_HIGH)
+            );
+
+    // TODO finish comparator
+    mcpwm_comparator_set_compare_value(cmpr_0, timer_0_config.period_ticks / 2);
 
     mcpwm_timer_enable(timer_0);
     mcpwm_timer_start_stop(timer_0, MCPWM_TIMER_START_NO_STOP);
@@ -120,7 +133,6 @@ void stp_set_speed_hz(uint32_t frequency) {
 
 void stp_move(uint8_t direction, uint32_t speed) {
     stp_dir = direction;
-
 }
 
 

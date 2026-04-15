@@ -8,7 +8,6 @@
 #include "esp_idf_rotary_pendulum.h"
 
 #include "driver/gpio.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "hal/gpio_types.h"
 

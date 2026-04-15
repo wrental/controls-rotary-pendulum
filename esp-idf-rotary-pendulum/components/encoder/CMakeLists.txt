@@ -6,5 +6,4 @@ idf_component_register(
         ../../main/
     REQUIRES
         driver
-        esp_timer
 )
