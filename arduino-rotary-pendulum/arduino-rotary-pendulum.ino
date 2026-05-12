@@ -18,28 +18,32 @@
 // global constants
 #define ENCODER_RES 2400  // ticks/rotation
 #define MOTOR_RES 3200    // ticks/rotation
-#define SS_ERROR 3        // steady-state error margin (ticks)
+
+// not sure these are really needed
+#define SS_ERROR 3                          // steady-state error margin (ticks)
+#define ACTUATION_RANGE (ENCODER_RES / 10)  // 360 / 10 = 36 deg
+#define MOTOR_VEL_MAX 1000                  // sps
+#define MOTOR_ACCEL_MAX 3000                // spsps
+#define STEP_ACTION_DELAY 2                 // microseconds
+#define LOOP_DURATION 1                     // ms = 1kHz
+
+// PID constants
+#define K_P 0.1
+#define K_I 1.9
+#define K_D 8.8
 
 // data sharing between threads
 typedef struct pendulum_data_t {
-  int loop_duration;
-  int encoder_pos_ticks;
-  int motor_pos_ticks;
+  float encoder_pos_degrees;
+  float move_stp_degrees;
 };
 
 pendulum_data_t pendulum_data_send;
 int queue_item_size = sizeof(pendulum_data_send);
 QueueHandle_t pendulum_data_queue = xQueueCreate(2, queue_item_size);
 
-// global variables
-int loop_start_time = 1;  // microseconds, placeholder
-int loop_duration = 1;    // microseconds, placeholder
-float loop_duration_sec = 0;
 // encoder:
 int encoder_pos_ticks = 0;  // cw = positive, ccw = negative
-// motor:
-uint8_t motor_dir = 0;    // 0 = cw, 1 = ccw from TOP VIEW
-int motor_pos_ticks = 0;  // cw = positive, ccw = negative
 
 // encoder interrupt service routines
 void encoder_A_interrupt(void) {
@@ -98,15 +102,15 @@ void motor_init(void) {
 }
 
 // move stepper motor 1 microstep
-// takes approx 50 microseconds >> 20,000sps, should use max like 3,000sps
+// takes approx 50 microseconds >> 20,000sps, should use max like 3,000spsps
 // 0 = cw, 1 = ccw
 // TODO: swap this out for conditional code in main loop
 void motor_step(uint8_t motor_dir) {
-  if (motor_dir == 0) {
-    motor_pos_ticks++;
-  } else {
-    motor_pos_ticks--;
-  }
+  // if (motor_dir == 0) {
+  //   motor_pos_ticks++;
+  // } else {
+  //   motor_pos_ticks--;
+  // }
   digitalWrite(MOTOR_DIR, motor_dir);
   delayMicroseconds(3);
   digitalWrite(MOTOR_STEP, HIGH);
@@ -115,7 +119,20 @@ void motor_step(uint8_t motor_dir) {
   delayMicroseconds(39);
 }
 
-// separate the print function
+void motor_stp_degrees(float degrees) {
+  int motor_dir;
+  int steps = (int)(degrees * (3200.0 / 360.0));
+  if (steps < 0) {
+    motor_dir = 0;
+  } else {
+    motor_dir = 1;
+  }
+  for (int i = 0; i < steps; i++) {
+    motor_step(motor_dir);
+  }
+}
+
+// separate the print function - CORE 0
 void print_output(void* pvParamters) {
   pendulum_data_t pendulum_data_receive;
   float loop_duration_sec;
@@ -123,12 +140,8 @@ void print_output(void* pvParamters) {
     // read from queue
     xQueueReceive(pendulum_data_queue, (void*)&pendulum_data_receive, 10);
 
-    // calculations
-    loop_duration_sec = pendulum_data_receive.loop_duration * 0.000001;
-
-    printf("ENCODER: ticks: %i | ", pendulum_data_receive.encoder_pos_ticks);
-    printf("LOOP: ticks: %i sec: %f Hz: %f",
-           pendulum_data_receive.loop_duration, loop_duration_sec, (1 / loop_duration_sec));
+    printf("encoder_pos_degrees %.2f | move_stp_degrees %.2f",
+           pendulum_data_receive.encoder_pos_degrees, pendulum_data_receive.move_stp_degrees);
     printf("\n");
 
     // 10ms delay, allow for idle tasks
@@ -136,36 +149,69 @@ void print_output(void* pvParamters) {
   }
 }
 
-// control loop
+// control loop - CORE 1
 // TODO: current duration: 2 us
 void app_main(void* pvParameters) {
-  encoder_pos_ticks = ENCODER_RES / 2;
+  // motor switching variables
+  uint8_t motor_dir = 0;  // 0 = cw, 1 = ccw
+  int motor_pos_ticks = 0;
+  int last_step_action_time = 0;
+  bool motor_step_status = false;
+
+  // encoder position initialization
+  encoder_pos_ticks = 0;  // starting position at bottom - DO NOT REINIT GLOBAL VAR
+  int error_steps = 0;
+
+  // init stepper, encoder, ISR
   motor_init();
   encoder_init();
+
+  // momentary delay
   vTaskDelay(1 / portTICK_PERIOD_MS);
-  int error_steps;
 
+  // 1kHz implementation
+  // TickType_t loop_start_ticks;
+
+  // asap timer implementation
+  int t = 0;
+  int dt = 0;
+  float dt_s;
+
+  int loop_enc_pos_ticks;
+  float encoder_pos_degrees;
+  float encoder_err_degrees;
+  float last_err_degrees;
+  float integral;
+  float derivative;
+  float move_stp_degrees;
+
+  // main app loop
   for (;;) {
-    // mark loop start
-    loop_start_time = esp_timer_get_time();
+    // 1kHz implementation
+    // vTaskDelayUntil(&loop_start_ticks, pdMS_TO_TICKS(LOOP_DURATION));
 
-    // error calculation in steps
-    error_steps = (ENCODER_RES / 2) - encoder_pos_ticks;
+    dt = esp_timer_get_time() - t;
+    dt_s = dt / 1000000.0;
+    t = esp_timer_get_time();
+    last_err_degrees = encoder_err_degrees;
 
-    // only fire actuator if within fixable range (45 deg)
-    if (error_steps < (ENCODER_RES / 8) && error_steps > SS_ERROR) {
-      // TODO error accumulation, actuation, LQR controller
-      // base step firing on vel/accel timer
+    // bottom = 0, top = 180 deg
+    loop_enc_pos_ticks = abs(encoder_pos_ticks % 2400);
+    encoder_pos_degrees = (loop_enc_pos_ticks * (360.0 / 2400.0));
+    encoder_err_degrees = 180.0 - encoder_pos_degrees;
+    integral = encoder_err_degrees * dt_s;
+    derivative = last_err_degrees - encoder_err_degrees;
+    move_stp_degrees = (K_P * encoder_err_degrees) + (K_I * integral) + (K_D * derivative);
+
+    // only actuate if within 20 deg error
+    if (abs(encoder_err_degrees) < 20) {
+      motor_stp_degrees(move_stp_degrees);
     }
 
     // send status to print_output thread if queue has room
-    pendulum_data_send.encoder_pos_ticks = encoder_pos_ticks;
-    pendulum_data_send.motor_pos_ticks = motor_pos_ticks;
-    pendulum_data_send.loop_duration = loop_duration;
+    pendulum_data_send.encoder_pos_degrees = encoder_pos_degrees;
+    pendulum_data_send.move_stp_degrees = move_stp_degrees;
     xQueueSend(pendulum_data_queue, (void*)&pendulum_data_send, 0);
-
-    // calculate loop time in microseconds
-    loop_duration = esp_timer_get_time() - loop_start_time;
   }
 }
 
